@@ -10,6 +10,7 @@ import {
   Menu,
   Search,
   Shield,
+  Tags, // [CATEGORIA] ícone do menu de categorias
   User,
   Users,
   X,
@@ -83,6 +84,13 @@ export function AuthLayout() {
           icon: <ListTodo className="h-4 w-4 shrink-0" />,
           badge: 'Ref',
         },
+        // [CATEGORIA] Novo item de menu logo abaixo de Tarefas
+        {
+          label: 'Categorias',
+          path: '/categories',
+          icon: <Tags className="h-4 w-4 shrink-0" />,
+          badge: null,
+        },
         ...(isAdmin
           ? [
               {
@@ -113,6 +121,9 @@ export function AuthLayout() {
     switch (location.pathname) {
       case '/tasks':
         return { title: 'Tarefas', category: 'Módulos' };
+      // [CATEGORIA] Título/breadcrumb da nova página
+      case '/categories':
+        return { title: 'Categorias', category: 'Módulos' };
       case '/users':
         return { title: 'Usuários', category: 'Administração' };
       case '/profile':

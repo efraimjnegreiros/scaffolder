@@ -8,6 +8,8 @@ import { AuthProvider } from './context/auth-context';
 import { ThemeProvider } from './context/theme-context';
 import { AuthLayout } from './components/layout/auth-layout';
 import { ProtectedRoute } from './components/layout/protected-route';
+// [CATEGORIA] Nova página de categorias
+import { CategoriesPage } from './pages/categories-page';
 import { DashboardPage } from './pages/dashboard-page';
 import { LoginPage } from './pages/login-page';
 import { ProfilePage } from './pages/profile-page';
@@ -57,6 +59,8 @@ export function App() {
               >
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/tasks" element={<TasksPage />} />
+                {/* [CATEGORIA] Rota protegida (qualquer usuário logado), igual a /tasks */}
+                <Route path="/categories" element={<CategoriesPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route
                   path="/users"

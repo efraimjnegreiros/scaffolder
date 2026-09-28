@@ -37,6 +37,8 @@ model UserProfile {
   updatedAt      DateTime  @updatedAt
   sessions       Session[]
   tasks          Task[]
+  // [CATEGORIA] Relação inversa: um usuário pode ter várias categorias próprias.
+  taskCategories TaskCategory[]
 
   @@map("user_profiles")
 }
@@ -57,20 +59,45 @@ model Session {
 }
 
 model Task {
-  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   title       String
   description String?
-  status      TaskStatus   @default(PENDING)
-  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus    @default(PENDING)
+  priority    TaskPriority  @default(MEDIUM)
   dueDate     DateTime?
-  ownerId     String       @db.Uuid
+  // [CATEGORIA] Chave estrangeira OPCIONAL: a tarefa pode não ter categoria.
+  categoryId  String?       @db.Uuid
+  ownerId     String        @db.Uuid
   deletedAt   DateTime?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  owner       UserProfile  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  owner       UserProfile   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  // [CATEGORIA] Se a categoria for apagada fisicamente do banco, a tarefa fica sem categoria (SetNull).
+  category    TaskCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   @@index([ownerId])
   @@index([deletedAt])
   @@index([status])
+  // [CATEGORIA] Índice para acelerar o filtro "tarefas da categoria X".
+  @@index([categoryId])
   @@map("tasks")
+}
+
+// [CATEGORIA] Nova entidade seguindo exatamente o mesmo padrão de Task:
+// UUID, ownership (ownerId), soft delete (deletedAt) e timestamps.
+model TaskCategory {
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  // Cor em hexadecimal (#RRGGBB) usada para pintar o badge na tela de tarefas.
+  color     String      @default("#3B82F6")
+  ownerId   String      @db.Uuid
+  deletedAt DateTime?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  owner     UserProfile @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+
+  @@index([ownerId])
+  @@index([deletedAt])
+  @@map("task_categories")
 }

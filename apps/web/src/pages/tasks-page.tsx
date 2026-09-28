@@ -15,6 +15,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Tag,
   Trash2,
   X,
 } from 'lucide-react';
@@ -25,12 +26,17 @@ import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { ActionFeedback, EmptyState, ErrorState, LoadingState } from '../components/ui/state-feedback';
 import {
+  // [CATEGORIA] função gerada pelo Orval para listar categorias
+  categoriesControllerFindAll,
   tasksControllerCreate,
   tasksControllerFindAll,
   tasksControllerRemove,
   tasksControllerUpdate,
 } from '../lib/api-client';
 import type {
+  // [CATEGORIA] tipos gerados pelo Orval
+  CategoryDto,
+  PaginatedCategoriesResponseDto,
   PaginatedTasksResponseDto,
   TaskDto,
   TaskDtoPriority,
@@ -45,6 +51,8 @@ const taskFormSchema = z.object({
   description: z.string().max(1000, 'Máximo de 1000 caracteres.').optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
   dueDate: z.string().optional(),
+  // [CATEGORIA] '' (string vazia) = "Sem categoria" no <select>
+  categoryId: z.string().optional(),
 });
 
 type TaskFormValues = z.infer<typeof taskFormSchema>;
@@ -55,8 +63,28 @@ const editTaskFormSchema = taskFormSchema.extend({
 
 type EditTaskFormValues = z.infer<typeof editTaskFormSchema>;
 
+// [CATEGORIA] Badge com a cor da própria categoria.
+// A cor vem do banco (dinâmica), por isso usamos style e não classes do Tailwind.
+// "#RRGGBB" + "1A" = mesma cor com ~10% de opacidade (fundo suave).
+function CategoryBadge({ name, color }: { name: string; color: string }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border"
+      style={{ backgroundColor: `${color}1A`, color, borderColor: `${color}66` }}
+    >
+      <Tag className="h-3 w-3" />
+      {name}
+    </span>
+  );
+}
+
+// [CATEGORIA] Classe do <select> de categoria, reaproveitada nos modais de criar e editar.
+const categorySelectClass =
+  'flex h-10 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed';
+
 export function TasksPage() {
-  const { isAdmin } = useAuth();
+  // [CATEGORIA] "user" agora também é usado para saber quais categorias são do usuário
+  const { isAdmin, user } = useAuth();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -64,6 +92,8 @@ export function TasksPage() {
   const search = searchParams.get('search') || '';
   const statusFilter = searchParams.get('status') || '';
   const priorityFilter = searchParams.get('priority') || '';
+  // [CATEGORIA] filtro de categoria também fica na URL (?categoryId=...)
+  const categoryFilter = searchParams.get('categoryId') || '';
   const sortBy = searchParams.get('sortBy') || 'createdAt';
   const sortOrder = (searchParams.get('sortOrder') as 'asc' | 'desc') || 'desc';
 
@@ -86,7 +116,8 @@ export function TasksPage() {
 
   // Fetch Tasks with TanStack Query
   const { data: response, isLoading, isError, refetch } = useQuery({
-    queryKey: ['tasks', { page, search, statusFilter, priorityFilter, sortBy, sortOrder }],
+    // [CATEGORIA] categoryFilter entra na queryKey para refazer a busca quando mudar
+    queryKey: ['tasks', { page, search, statusFilter, priorityFilter, categoryFilter, sortBy, sortOrder }],
     queryFn: async () => {
       const res = await tasksControllerFindAll({
         page,
@@ -94,6 +125,7 @@ export function TasksPage() {
         ...(search ? { search } : {}),
         ...(statusFilter ? { status: statusFilter as any } : {}),
         ...(priorityFilter ? { priority: priorityFilter as any } : {}),
+        ...(categoryFilter ? { categoryId: categoryFilter } : {}), // [CATEGORIA]
         sortBy: sortBy as any,
         sortOrder,
       });
@@ -108,6 +140,26 @@ export function TasksPage() {
   const tasks: TaskDto[] = paginatedData?.data || [];
   const meta = paginatedData?.meta || { page: 1, pageSize: 8, total: 0, totalPages: 1 };
 
+  // [CATEGORIA] Carrega as categorias para os <select> (filtro e formulários).
+  // A chave começa com 'categories', então quando a tela de categorias invalida
+  // ['categories'], esta lista também é atualizada automaticamente.
+  const { data: categoriesResponse } = useQuery({
+    queryKey: ['categories', 'options'],
+    queryFn: async () => {
+      const res = await categoriesControllerFindAll({ page: 1, pageSize: 100 });
+      return res.data;
+    },
+  });
+
+  const categoryOptions: CategoryDto[] =
+    categoriesResponse && 'data' in (categoriesResponse as PaginatedCategoriesResponseDto)
+      ? (categoriesResponse as PaginatedCategoriesResponseDto).data
+      : [];
+
+  // [CATEGORIA] Na criação a tarefa é SEMPRE do usuário logado, então só
+  // oferecemos as categorias dele (para ADMIN a API devolve as de todos).
+  const myCategoryOptions = categoryOptions.filter((c) => c.ownerId === user?.id);
+
   // Form for Creating
   const {
     register: registerCreate,
@@ -121,6 +173,7 @@ export function TasksPage() {
       description: '',
       priority: 'MEDIUM',
       dueDate: '',
+      categoryId: '', // [CATEGORIA] começa "Sem categoria"
     },
   });
 
@@ -131,6 +184,7 @@ export function TasksPage() {
         description: data.description || undefined,
         priority: data.priority as any,
         dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
+        categoryId: data.categoryId || undefined, // [CATEGORIA] '' vira "não enviar"
       });
       return res.data;
     },
@@ -166,6 +220,7 @@ export function TasksPage() {
         priority?: TaskDtoPriority;
         status?: TaskDtoStatus;
         dueDate?: string;
+        categoryId?: string | null; // [CATEGORIA] null = remover categoria
       };
     }) => {
       const res = await tasksControllerUpdate(id, data as any);
@@ -262,7 +317,8 @@ export function TasksPage() {
       {/* Filter and Search Controls */}
       <Card>
         <CardContent className="p-4 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* [CATEGORIA] grid passou de 4 para 5 colunas por causa do novo filtro */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -301,6 +357,20 @@ export function TasksPage() {
               <option value="URGENT">Urgente</option>
             </select>
 
+            {/* [CATEGORIA] Filtro por categoria */}
+            <select
+              value={categoryFilter}
+              onChange={(e) => updateParams({ categoryId: e.target.value || undefined, page: 1 })}
+              className="flex h-10 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              <option value="">Todas as Categorias</option>
+              {categoryOptions.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+
             {/* Sorting */}
             <select
               value={`${sortBy}:${sortOrder}`}
@@ -332,12 +402,12 @@ export function TasksPage() {
         <EmptyState
           title="Nenhuma tarefa encontrada"
           description={
-            search || statusFilter || priorityFilter
+            search || statusFilter || priorityFilter || categoryFilter // [CATEGORIA]
               ? 'Nenhum registro corresponde aos filtros selecionados.'
               : 'Você ainda não possui tarefas criadas.'
           }
           action={
-            search || statusFilter || priorityFilter ? (
+            search || statusFilter || priorityFilter || categoryFilter ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -375,6 +445,11 @@ export function TasksPage() {
                           {getStatusBadge(task.status)}
                         </div>
                       </div>
+
+                      {/* [CATEGORIA] Badge colorido quando a tarefa tem categoria */}
+                      {task.category && (
+                        <CategoryBadge name={task.category.name} color={task.category.color} />
+                      )}
 
                       {desc && (
                         <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
@@ -571,6 +646,21 @@ export function TasksPage() {
                 />
               </div>
 
+              {/* [CATEGORIA] Seleção de categoria na criação */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Categoria
+                </label>
+                <select {...registerCreate('categoryId')} className={categorySelectClass}>
+                  <option value="">Sem categoria</option>
+                  {myCategoryOptions.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <Button
                   type="button"
@@ -593,6 +683,8 @@ export function TasksPage() {
       {editingTask && (
         <EditTaskModal
           task={editingTask}
+          // [CATEGORIA] só as categorias do DONO da tarefa (regra também validada no backend)
+          categories={categoryOptions.filter((c) => c.ownerId === editingTask.ownerId)}
           onClose={() => setEditingTask(null)}
           onSubmit={(data) => {
             setFeedback(null);
@@ -607,13 +699,16 @@ export function TasksPage() {
 
 function EditTaskModal({
   task,
+  categories,
   onClose,
   onSubmit,
   isLoading,
 }: {
   task: TaskDto;
+  categories: CategoryDto[]; // [CATEGORIA]
   onClose: () => void;
-  onSubmit: (data: EditTaskFormValues) => void;
+  // [CATEGORIA] no envio, categoryId pode ser null (= remover categoria)
+  onSubmit: (data: Omit<EditTaskFormValues, 'categoryId'> & { categoryId: string | null }) => void;
   isLoading: boolean;
 }) {
   const isCompleted = task.status === 'COMPLETED';
@@ -632,6 +727,7 @@ function EditTaskModal({
       priority: task.priority as any,
       status: task.status as any,
       dueDate: rawDue,
+      categoryId: task.categoryId ?? '', // [CATEGORIA] null vira '' (Sem categoria)
     },
   });
 
@@ -669,6 +765,8 @@ function EditTaskModal({
               priority: data.priority,
               status: data.status,
               dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : undefined,
+              // [CATEGORIA] '' (Sem categoria) é enviado como null para REMOVER a categoria
+              categoryId: data.categoryId || null,
             });
           })}
           className="space-y-4"
@@ -732,6 +830,22 @@ function EditTaskModal({
             {...register('dueDate')}
             error={errors.dueDate?.message}
           />
+
+          {/* [CATEGORIA] Troca/remoção de categoria. Fica bloqueada em tarefa concluída,
+              igual aos outros campos (mesma regra do backend). */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              Categoria
+            </label>
+            <select disabled={isCompleted} {...register('categoryId')} className={categorySelectClass}>
+              <option value="">Sem categoria</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
             <Button type="button" variant="outline" size="sm" onClick={onClose}>

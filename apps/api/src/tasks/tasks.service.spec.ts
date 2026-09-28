@@ -50,6 +50,10 @@ describe('TasksService', () => {
         count: vi.fn(),
         update: vi.fn(),
       },
+      // [CATEGORIA] O TasksService agora consulta taskCategory para validar a categoria
+      taskCategory: {
+        findFirst: vi.fn(),
+      },
     };
     service = new TasksService(prisma as unknown as PrismaService);
   });
@@ -79,6 +83,57 @@ describe('TasksService', () => {
           dueDate: pastDate,
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // [CATEGORIA] Testes novos da regra de categoria
+  describe('category', () => {
+    it('creates task with a category owned by the same user', async () => {
+      prisma.taskCategory.findFirst.mockResolvedValue({ id: 'cat-1', ownerId: mockUser.id });
+      prisma.task.create.mockResolvedValue({
+        ...mockTask,
+        categoryId: 'cat-1',
+        category: { id: 'cat-1', name: 'Trabalho', color: '#3B82F6' },
+      });
+
+      const result = await service.create(mockUser.id, {
+        title: 'Com categoria',
+        categoryId: 'cat-1',
+      });
+
+      expect(result.category?.name).toBe('Trabalho');
+      expect(prisma.taskCategory.findFirst).toHaveBeenCalledWith({
+        where: { id: 'cat-1', ownerId: mockUser.id, deletedAt: null },
+      });
+    });
+
+    it('rejects category that does not belong to the task owner', async () => {
+      prisma.taskCategory.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.create(mockUser.id, { title: 'Categoria alheia', categoryId: 'cat-de-outro' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.task.create).not.toHaveBeenCalled();
+    });
+
+    it('removes category when categoryId is sent as null', async () => {
+      prisma.task.findFirst.mockResolvedValue({ ...mockTask, categoryId: 'cat-1' });
+      prisma.task.update.mockResolvedValue({ ...mockTask, categoryId: null, category: null });
+
+      const result = await service.update(mockUser, mockTask.id, { categoryId: null });
+
+      expect(result.categoryId).toBeNull();
+      expect(prisma.task.update.mock.calls[0][0].data.categoryId).toBeNull();
+      expect(prisma.taskCategory.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('filters list by categoryId', async () => {
+      prisma.task.count.mockResolvedValue(0);
+      prisma.task.findMany.mockResolvedValue([]);
+
+      await service.findAll(mockUser, { page: 1, pageSize: 10, categoryId: 'cat-1' });
+
+      expect(prisma.task.findMany.mock.calls[0][0].where.categoryId).toBe('cat-1');
     });
   });
 

@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -47,6 +48,12 @@ export class CreateTaskDto {
   @IsOptional()
   @IsDateString({}, { message: 'Data de entrega limite deve ser uma string ISO válida.' })
   dueDate?: string;
+
+  // [CATEGORIA] Categoria opcional da tarefa (UUID de uma categoria do próprio usuário).
+  @ApiPropertyOptional({ description: 'Identificador da categoria da tarefa', example: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33' })
+  @IsOptional()
+  @IsUUID('all', { message: 'Categoria inválida.' })
+  categoryId?: string;
 }
 
 export class UpdateTaskDto {
@@ -77,6 +84,16 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsDateString({}, { message: 'Data de entrega limite deve ser uma string ISO válida.' })
   dueDate?: string;
+
+  // [CATEGORIA] Aceita três situações:
+  //   - campo ausente (undefined) -> não mexe na categoria
+  //   - null                      -> REMOVE a categoria da tarefa
+  //   - UUID                      -> troca para a categoria informada
+  // Obs.: @IsOptional() ignora undefined E null, por isso o null passa na validação.
+  @ApiPropertyOptional({ description: 'Categoria da tarefa (envie null para remover)', nullable: true, type: String })
+  @IsOptional()
+  @IsUUID('all', { message: 'Categoria inválida.' })
+  categoryId?: string | null;
 }
 
 export class TaskOwnerDto {
@@ -88,6 +105,19 @@ export class TaskOwnerDto {
 
   @ApiProperty({ description: 'E-mail do proprietário', example: 'ada@example.com' })
   email!: string;
+}
+
+// [CATEGORIA] Resumo da categoria embutido em cada tarefa (evita outra requisição
+// só para mostrar o nome/cor no card).
+export class TaskCategorySummaryDto {
+  @ApiProperty({ description: 'Identificador da categoria', example: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33' })
+  id!: string;
+
+  @ApiProperty({ description: 'Nome da categoria', example: 'Trabalho' })
+  name!: string;
+
+  @ApiProperty({ description: 'Cor da categoria (#RRGGBB)', example: '#3B82F6' })
+  color!: string;
 }
 
 export class TaskDto {
@@ -115,6 +145,13 @@ export class TaskDto {
   @ApiPropertyOptional({ description: 'Dados resumidos do proprietário', type: () => TaskOwnerDto })
   owner?: TaskOwnerDto;
 
+  // [CATEGORIA] Id e resumo da categoria (null quando a tarefa não tem categoria).
+  @ApiPropertyOptional({ description: 'Identificador da categoria', nullable: true, type: String })
+  categoryId!: string | null;
+
+  @ApiPropertyOptional({ description: 'Dados resumidos da categoria', type: () => TaskCategorySummaryDto, nullable: true })
+  category!: TaskCategorySummaryDto | null;
+
   @ApiProperty({ description: 'Data de criação' })
   createdAt!: string;
 
@@ -140,6 +177,12 @@ export class ListTasksQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(TaskPriorityEnum)
   priority?: TaskPriorityEnum;
+
+  // [CATEGORIA] Novo filtro: GET /tasks?categoryId=<uuid>
+  @ApiPropertyOptional({ description: 'Filtro por categoria' })
+  @IsOptional()
+  @IsUUID('all', { message: 'Categoria inválida.' })
+  categoryId?: string;
 
   @ApiPropertyOptional({ description: 'Campo de ordenação', enum: ['createdAt', 'dueDate', 'title', 'priority', 'status'], default: 'createdAt' })
   @IsOptional()
