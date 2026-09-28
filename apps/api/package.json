@@ -1,5 +1,5 @@
 {
-  "name": "@appstart/api",
+  "name": "@clinica/api",
   "private": true,
   "scripts": {
     "build": "nest build",

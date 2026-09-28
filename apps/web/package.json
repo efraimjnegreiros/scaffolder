@@ -1,5 +1,5 @@
 {
-  "name": "@appstart/web",
+  "name": "@clinica/web",
   "private": true,
   "type": "module",
   "scripts": {
